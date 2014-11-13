@@ -1,0 +1,149 @@
+############################################################
+# ANSIBLE PROVISION
+# AUTHOR: alfie.driver@cspencerltd.co.uk
+# CREATED: 28TH AUGUST 2014
+############################################################
+---
+- hosts: all
+  sudo: true
+
+  vars:
+    project_root: /var/www/html/SeaBaseBank
+    vendor_root:  /var/www/html/SeaBaseBank/vendor
+    composer_install: /var/www/html/SeaBaseBank/vendor
+
+  pre_tasks:
+  - name: Updating apt_cache
+    apt: update_cache=yes cache_valid_time=3600
+
+  tasks:
+
+  #INSTALLING GIT
+  - name: Now Installing git
+    apt: pkg=git state=installed
+
+  #INSTALLING ssmtp SERVER
+  - name: Installing SSMTP Mail Server
+    apt: pkg=ssmtp state=installed
+
+  #NOW PUSHING ssmtp conf FILE TO VAGRANT
+  - name: Installing SSMTP
+    copy: src=files/ssmtp.conf dest=/etc/ssmtp/ssmtp.conf mode=0640
+
+  - name: Changing Ownership of SSMTP
+    shell: chown www-data:www-data /etc/ssmtp/ssmtp.conf
+
+  - name: Adding www-data to the mail group
+    shell: sudo usermod -a -G mail www-data
+
+  #https://www.digitalocean.com/community/tutorials/how-to-install-linux-apache-mysql-php-lamp-stack-on-ubuntu-14-04
+  #INSTALLING PHP5 and PHP5-CURL
+  - name: Now Installing the latest version of PHP
+    apt: pkg=php5 state=installed
+
+
+  #INSTALLING APACHE2 SERVER
+  - name: Now Installing Apache2 Server
+    apt: pkg=apache2 state=installed
+
+  #CHANGING THE APACHE VIRTUALHOST FILE
+  #  template: src=files/seabasebank.conf dest=/etc/apache2/sites-available/seabasebank.conf
+
+  #NOW PUSHING seabasebank.conf FILE TO VAGRANT
+  - name: Now pushing seabasebank.CONF to vagrant
+    copy: src=files/seabasebank.conf dest=/etc/apache2/sites-available/seabasebank.conf mode=0640
+
+  #NOW DISABLING 000-defaults
+  - name: Now Disabling 000-default
+    command: a2dissite 000-default
+    sudo: yes
+
+  #NOW DISABLING default-ssl
+  - name: Now Disabling default-ssl
+    command: a2dissite default-ssl
+    sudo: yes
+
+  #NOW ENABLING THE ONLY SITE THAT IS NEEDED
+  - name: Now Enabling Current Site
+    command: a2ensite seabasebank.conf
+    sudo: yes
+
+  #INSTALLING PHP5 and PHP5-CURL
+  - name: Now Installing the latest version of PHP
+    apt: pkg=php5 state=installed
+
+  #INSTALLING PHP5-CURL
+  - name: Now Installing PHP5-CURL
+    apt: pkg=php5-curl state=installed
+
+  #INSTALLING PHP5-DEV
+  - name: Now Installing PHP5-dev
+    apt: pkg=php5-dev state=installed
+
+  #INSTALLING MySQL SERVER
+  - name: Now Installing MySQL Server
+    apt: pkg={{ item }} state=installed
+    with_items:
+    - mysql-server
+    - php5-mysql
+    - python-mysqldb
+
+  #SETTING UP A ROOT PASSWORD FOR MYSQL
+  - name: Now Setting Up MySQL Root Password 1/2
+    shell: mysql-server-5.5 mysql-server/root_password password password | debconf-set-selections
+
+  - name: Now Setting Up MySQL Root Password 2/2
+    shell: mysql-server-5.5 mysql-server/root_password_again password password | debconf-set-selections
+
+  #SETTING UP THE DATABASE WITH A NAME
+  - name: Initialising Database Creation
+    mysql_db: name=SeaBaseBank state=present
+
+  #DOWNLOADING COMPOSER
+  - name: Now Downloading Composer
+    get_url: url=https://getcomposer.org/composer.phar
+      dest="{{project_root}}/composer.phar"
+      validate_certs=no
+
+  #INSTALLING COMPOSER DEPENDENCIES
+  - name: Now Downloading and Installing Dependencies
+    shell: php composer.phar install
+    args:
+      chdir: "{{project_root}}"
+
+  #INSTALLING XDEBUG
+  - name: Now Installing XDEBUG
+    apt: pkg=php5-xdebug
+
+  #CREATING A NEW DIRECTORY FOR MIGRATION
+  - name: Creates directory
+    file: path={{project_root}}/migrations state=directory
+
+  #Database Migration
+  - name: Initialising Database Migration
+    shell: php vendor/bin/phinx migrate -e development
+    args:
+      chdir: "{{project_root}}"
+
+  #NOW PUSHING Inserts.sh to vagrant
+  - name: Now pushing inserts.sh
+    copy: src=files/inserts.sh dest=/home/inserts.sh mode=0777
+
+  #http://stackoverflow.com/questions/22939775/ansible-and-wget
+  #http://phpunit.de/manual/4.1/en/installation.html
+  #DOWNLOADING PHPUnit INTO /var/www/html/cyancat/php_unit
+  - name: Now Downloading Composer Library - PHPUnit
+    get_url: url=https://phar.phpunit.de/phpunit.phar
+      dest="{{project_root}}/phpunit.phar"
+      validate_certs=no
+
+  #Inserting neeeded information into the php.ini 
+  - name: General | Inserting information into php.ini
+    shell: /home/inserts.sh >> php.ini chdir=/etc/php5/apache2/
+    sudo: true
+
+  #STARTING UP LAMP SERVICES
+  - name: Starting up Apache, MySQL and PHP Services
+    service: name={{ item }} state=restarted enabled=yes
+    with_items:
+    - apache2 

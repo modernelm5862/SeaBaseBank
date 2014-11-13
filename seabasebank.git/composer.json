@@ -1,0 +1,12 @@
+{
+    "name": "seabasebank",
+    "description": "SeaBaseBank App Practice",
+    "minimum-stability": "dev",
+    "require": {
+        "zendframework/zendframework": "2.3.2",
+        "doctrine/doctrine-orm-module": "dev-master",
+        "zendframework/zend-developer-tools": "dev-master",
+        "doctrine/orm": "*",
+        "robmorgan/phinx": "*"
+    }
+}
